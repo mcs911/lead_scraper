@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="hu">
+<head><meta charset="utf-8"><title>Boltok</title></head>
+<body>
+  <div class="store-list">
+
+    <div class="store-list__item" data-store-id="alfa-elektronika">
+      <a href="/stores/alfa-elektronika/" title="Alfa Elektronika Kft.">
+        <img src="/img/logo/alfa.png" alt="Alfa Elektronika logó">
+      </a>
+      <h2 class="store-name"><a href="/stores/alfa-elektronika/">Alfa Elektronika Kft.</a></h2>
+      <span class="rating-value">4,7</span>
+      <span class="review-count">1 284 értékelés</span>
+      <span class="offer-count">12.480 termék</span>
+      <span class="store-city">Budapest</span>
+      <a rel="nofollow" href="https://alfa-elektronika.hu">Webáruház</a>
+    </div>
+
+    <div class="store-list__item" data-store-id="bety-butor">
+      <a href="/stores/bety-butor/" title="Béty Bútor Zrt.">
+        <img src="/img/logo/bety.png" alt="Béty Bútor logó">
+      </a>
+      <h2 class="store-name"><a href="/stores/bety-butor/">Béty Bútor Zrt.</a></h2>
+      <span class="rating-value">3,9</span>
+      <span class="review-count">57 értékelés</span>
+      <span class="store-city">Debrecen</span>
+    </div>
+
+    <!-- Duplicate of the first store: must be deduplicated by store_id. -->
+    <div class="store-list__item" data-store-id="alfa-elektronika">
+      <h2 class="store-name"><a href="/stores/alfa-elektronika/">Alfa Elektronika Kft.</a></h2>
+    </div>
+
+  </div>
+
+  <nav class="pagination">
+    <a href="/stores/?page=1">1</a>
+    <a rel="next" href="/stores/?page=2">Következő</a>
+  </nav>
+</body>
+</html>
