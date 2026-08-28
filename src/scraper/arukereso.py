@@ -12,6 +12,11 @@ import requests
 
 from src.scraper.browser import FetchError, StealthBrowser
 from src.scraper.config import ScrapeConfig
+from src.scraper.contact import (
+    extract_legal_name,
+    extract_phone,
+    extract_tax_number,
+)
 from src.scraper.export import to_csv
 from src.scraper.models import Store
 from src.scraper.parsing import (
@@ -234,6 +239,12 @@ async def _enrich_one(browser: StealthBrowser, store: Store) -> None:
         store.city = select_text(tree, "city")
     if store.website_url is None:
         store.website_url = _find_outbound_link(tree, browser.config.base_url)
+
+    # Company details, which exist only on the profile page. Email is
+    # deliberately not collected — see src/scraper/contact.py.
+    store.legal_name = extract_legal_name(tree)
+    store.tax_number = extract_tax_number(tree)
+    store.phone = extract_phone(tree)
 
 
 def _find_outbound_link(tree: object, base_url: str) -> str | None:

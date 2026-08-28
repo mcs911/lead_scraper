@@ -30,6 +30,19 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib signature
+        if self.path.rstrip("/").endswith(("alfa-elektronika", "bety-butor")):
+            name = (
+                "store_profile.html"
+                if "alfa" in self.path
+                else "store_profile_table.html"
+            )
+            body = (FIXTURES / name).read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith("/stores/"):
             body = (FIXTURES / "stores_listing.html").read_bytes()
             self.send_response(200)
@@ -290,3 +303,66 @@ def test_scrape_to_csv_is_exported_from_the_package() -> None:
 
     assert callable(pkg.scrape_to_csv)
     assert callable(pkg.scrape_to_csv_sync)
+
+
+@pytest.mark.asyncio
+async def test_details_enrichment_populates_company_fields(server: str) -> None:
+    """--details visits each profile URL and fills in the company details."""
+    from src.scraper.arukereso import fetch_all_stores
+
+    cfg = ScrapeConfig(
+        base_url=server,
+        min_delay=0.0,
+        max_delay=0.0,
+        respect_robots=False,
+        max_pages=1,
+        enrich_details=True,
+        timeout_ms=15_000,
+    )
+    stores = {s.store_id: s for s in await fetch_all_stores(cfg)}
+
+    alfa = stores["alfa-elektronika"]
+    assert alfa.legal_name == "Alfa Kereskedelmi Kft."
+    assert alfa.tax_number == "12345678-1-42"
+    assert alfa.phone == "+3612345678"
+    # The storefront name from the listing is preserved, not overwritten.
+    assert alfa.name == "Alfa Elektronika Kft."
+
+    bety = stores["bety-butor"]
+    assert bety.legal_name == "Béty Bútor Zrt."
+    assert bety.tax_number == "87654321-2-13"
+    assert bety.phone == "+36301234567"
+
+
+@pytest.mark.asyncio
+async def test_company_fields_stay_none_without_details(config: ScrapeConfig) -> None:
+    """A listing-only run must not invent company details."""
+    from src.scraper.arukereso import fetch_all_stores
+
+    for store in await fetch_all_stores(config):
+        assert store.legal_name is None
+        assert store.tax_number is None
+        assert store.phone is None
+
+
+@pytest.mark.asyncio
+async def test_no_email_reaches_the_exported_csv(server: str, tmp_path: Path) -> None:
+    """End-to-end guard: the profile fixture carries an email; the CSV must not.
+
+    Covers the whole path rather than the extractors alone, so a future field
+    or a widened fallback cannot smuggle an address into the output.
+    """
+    from src.scraper.arukereso import scrape_to_csv
+    from src.scraper.contact import contains_email
+
+    cfg = ScrapeConfig(
+        base_url=server,
+        min_delay=0.0,
+        max_delay=0.0,
+        respect_robots=False,
+        max_pages=1,
+        enrich_details=True,
+        timeout_ms=15_000,
+    )
+    out = await scrape_to_csv(tmp_path / "leads.csv", cfg)
+    assert not contains_email(out.read_text(encoding="utf-8-sig"))

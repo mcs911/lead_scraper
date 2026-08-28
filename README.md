@@ -69,6 +69,29 @@ The CLI treats an empty scrape as an error (exit code 1) instead.
 | `review_count`, `offer_count` | Ints; `1 234` and `1.234` both parse as `1234` |
 | `city`, `logo_url`, `scraped_at` | Best-effort |
 
+Three more come from the store's own profile page, so they need `--details`
+(`ScrapeConfig(enrich_details=True)`) and are `None` on a listing-only run:
+
+| Field | Notes |
+|---|---|
+| `legal_name` | The operating company, e.g. `Alfa Kereskedelmi Kft.` — routinely differs from the storefront `name` |
+| `tax_number` | Adószám, canonical `12345678-1-42`; the 8-digit core when only the EU VAT form (`HU12345678`) is shown |
+| `phone` | Normalised to E.164, e.g. `+3612345678`; accepts `+36`, `06`, and `0036` forms |
+
+These are extracted by **Hungarian label and format** (`Adószám:`, the
+`12345678-1-42` shape, `tel:` links, `Kft./Zrt./Bt.` suffixes) rather than by
+CSS class, so they work on markup the scraper has not seen — which matters
+while the selectors remain unverified.
+
+### Email is deliberately not collected
+
+Árukereső hides merchant email behind an interaction, so this scraper does not
+harvest it. That is enforced structurally, not by convention: `Store` has no
+email field, and every value returned from `contact.py` is filtered through
+`contains_email()`, so a label added later that happens to sit beside an
+address still cannot pick one up. Three tests pin it, including one asserting
+no address reaches the exported CSV.
+
 CSV is written UTF-8 **with BOM** so Excel renders `á`/`ő`/`ű` correctly.
 
 ## The selectors are unverified — read this before a real run
