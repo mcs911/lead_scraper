@@ -1,0 +1,3 @@
+playwright>=1.48,<2
+selectolax>=0.3.21,<0.5
+requests>=2.31,<3

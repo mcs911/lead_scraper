@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.venv/
+venv/
+
+# Scrape output
+stores.csv
+stores.json
+leads.csv
+leads.json
+dom-report.txt
