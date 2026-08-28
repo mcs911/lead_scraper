@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -11,6 +12,12 @@ import requests
 
 from src.scraper.browser import FetchError, StealthBrowser
 from src.scraper.config import ScrapeConfig
+from src.scraper.contact import (
+    extract_legal_name,
+    extract_phone,
+    extract_tax_number,
+)
+from src.scraper.export import to_csv
 from src.scraper.models import Store
 from src.scraper.parsing import (
     has_next_page,
@@ -136,6 +143,54 @@ def fetch_store_ids(config: ScrapeConfig | None = None) -> list[str]:
     return [store.store_id for store in fetch_all_stores_sync(config)]
 
 
+async def scrape_to_csv(
+    path: str | Path = "stores.csv",
+    config: ScrapeConfig | None = None,
+) -> Path:
+    """Scrape the store directory and write the results straight to a CSV.
+
+    The one-call form of ``fetch_all_stores`` followed by
+    :func:`~src.scraper.export.to_csv`. Use the two separately when you want
+    the :class:`~src.scraper.models.Store` objects as well as the file.
+
+    A run that finds nothing still writes a header-only CSV rather than
+    raising, so downstream tooling reading the file does not break; the empty
+    result is logged as a warning instead. Deciding that an empty scrape is a
+    failure is policy, and belongs to the caller — the CLI treats it as one.
+
+    Args:
+        path: Destination CSV. Parent directories are created as needed.
+        config: Runtime settings; defaults to a conservative
+            :class:`~src.scraper.config.ScrapeConfig`.
+
+    Returns:
+        The path written.
+
+    Raises:
+        RobotsDisallowed: ``config.respect_robots`` is set and robots.txt
+            disallows the store directory.
+    """
+    stores = await fetch_all_stores(config)
+
+    if not stores:
+        logger.warning(
+            "No stores scraped; writing a header-only CSV to %s. The configured "
+            "selectors may not match the live markup — run "
+            "`python -m src.cli discover` to derive the real ones.",
+            path,
+        )
+
+    return to_csv(stores, path)
+
+
+def scrape_to_csv_sync(
+    path: str | Path = "stores.csv",
+    config: ScrapeConfig | None = None,
+) -> Path:
+    """Blocking wrapper around :func:`scrape_to_csv`."""
+    return asyncio.run(scrape_to_csv(path, config))
+
+
 # -- detail enrichment -----------------------------------------------------
 
 
@@ -185,15 +240,30 @@ async def _enrich_one(browser: StealthBrowser, store: Store) -> None:
     if store.website_url is None:
         store.website_url = _find_outbound_link(tree, browser.config.base_url)
 
+    # Company details, which exist only on the profile page. Email is
+    # deliberately not collected — see src/scraper/contact.py.
+    store.legal_name = extract_legal_name(tree)
+    store.tax_number = extract_tax_number(tree)
+    store.phone = extract_phone(tree)
+
 
 def _find_outbound_link(tree: object, base_url: str) -> str | None:
-    """Return the first link pointing off arukereso.hu — the merchant's site."""
+    """Return the first link pointing off arukereso.hu — the merchant's site.
+
+    Excludes the site's own domain *and* its subdomains. Comparing against the
+    netloc alone is not enough: that is ``www.arukereso.hu``, which does not
+    match a CDN host like ``static.arukereso.hu``, so image and asset links
+    would be recorded as the merchant's website.
+    """
     own_host = urlparse(base_url).netloc
+    root = own_host[4:] if own_host.startswith("www.") else own_host
+
     for anchor in tree.css("a[href]"):  # type: ignore[attr-defined]
         href = anchor.attributes.get("href")
         if not href or not href.startswith("http"):
             continue
         host = urlparse(href).netloc
-        if host and host != own_host and not host.endswith(own_host):
-            return href
+        if not host or host == root or host.endswith(f".{root}"):
+            continue
+        return href
     return None

@@ -26,14 +26,36 @@ python -m src.cli scrape --headed --max-pages 1 -v
 From Python:
 
 ```python
-from src.scraper import ScrapeConfig, fetch_all_stores_sync
+from src.scraper import ScrapeConfig, scrape_to_csv_sync
+
+# Scrape and write the CSV in one call
+path = scrape_to_csv_sync("leads.csv", ScrapeConfig(max_pages=3))
+print(f"wrote {path}")
+```
+
+Or keep the `Store` objects and write the file separately:
+
+```python
+from src.scraper import ScrapeConfig, fetch_all_stores_sync, to_csv
 
 stores = fetch_all_stores_sync(ScrapeConfig(max_pages=3))
 for store in stores:
     print(store.store_id, store.name, store.rating, store.review_count)
+to_csv(stores, "leads.csv")
 ```
 
-`fetch_all_stores` is the async form; `fetch_store_ids()` returns just the IDs.
+| Function | Returns |
+|---|---|
+| `scrape_to_csv(path, config)` | Scrapes, writes the CSV, returns its `Path` |
+| `scrape_to_csv_sync(path, config)` | Blocking form of the above |
+| `fetch_all_stores(config)` | `list[Store]`, async |
+| `fetch_all_stores_sync(config)` | `list[Store]`, blocking |
+| `fetch_store_ids(config)` | `list[str]` of store IDs |
+| `to_csv(stores, path)` / `to_json(stores, path)` | Writes an existing list, returns its `Path` |
+
+A run that finds nothing still writes a header-only CSV and logs a warning
+rather than raising, so downstream tooling does not break on a missing file.
+The CLI treats an empty scrape as an error (exit code 1) instead.
 
 ### Output fields
 
@@ -46,6 +68,29 @@ for store in stores:
 | `rating` | Float; Hungarian `4,7` is parsed as `4.7` |
 | `review_count`, `offer_count` | Ints; `1 234` and `1.234` both parse as `1234` |
 | `city`, `logo_url`, `scraped_at` | Best-effort |
+
+Three more come from the store's own profile page, so they need `--details`
+(`ScrapeConfig(enrich_details=True)`) and are `None` on a listing-only run:
+
+| Field | Notes |
+|---|---|
+| `legal_name` | The operating company, e.g. `Alfa Kereskedelmi Kft.` — routinely differs from the storefront `name` |
+| `tax_number` | Adószám, canonical `12345678-1-42`; the 8-digit core when only the EU VAT form (`HU12345678`) is shown |
+| `phone` | Normalised to E.164, e.g. `+3612345678`; accepts `+36`, `06`, and `0036` forms |
+
+These are extracted by **Hungarian label and format** (`Adószám:`, the
+`12345678-1-42` shape, `tel:` links, `Kft./Zrt./Bt.` suffixes) rather than by
+CSS class, so they work on markup the scraper has not seen — which matters
+while the selectors remain unverified.
+
+### Email is deliberately not collected
+
+Árukereső hides merchant email behind an interaction, so this scraper does not
+harvest it. That is enforced structurally, not by convention: `Store` has no
+email field, and every value returned from `contact.py` is filtered through
+`contains_email()`, so a label added later that happens to sit beside an
+address still cannot pick one up. Three tests pin it, including one asserting
+no address reaches the exported CSV.
 
 CSV is written UTF-8 **with BOM** so Excel renders `á`/`ő`/`ű` correctly.
 

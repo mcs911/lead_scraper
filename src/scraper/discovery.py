@@ -9,12 +9,15 @@ repeating card container and the class names inside it, ready to paste into
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from typing import Iterable, NamedTuple
 
 from selectolax.parser import HTMLParser, Node
 
 from src.scraper.parsing import is_store_url
+
+logger = logging.getLogger(__name__)
 
 #: How far up from a store link to look for the repeating card container.
 _MAX_ANCESTOR_DEPTH = 6
@@ -89,6 +92,10 @@ def _rank_candidates(tree: HTMLParser, link_count: int) -> list[Candidate]:
         try:
             matches = tree.css(selector)
         except Exception:
+            # A derived signature the parser cannot compile is not worth
+            # aborting discovery for, but swallowing it silently would hide a
+            # real defect in _signature().
+            logger.debug("Skipping uncompilable candidate selector %r", selector)
             continue
         if not matches:
             continue

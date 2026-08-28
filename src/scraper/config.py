@@ -177,6 +177,10 @@ class ScrapeConfig:
             raise ValueError("min_delay must be <= max_delay")
         if self.max_pages is not None and self.max_pages < 1:
             raise ValueError("max_pages must be >= 1 when set")
+        if self.max_retries < 1:
+            # A zero would skip the fetch loop entirely and surface as a
+            # confusing "failed after 0 attempts" error at request time.
+            raise ValueError("max_retries must be >= 1")
 
     @property
     def stores_url(self) -> str:

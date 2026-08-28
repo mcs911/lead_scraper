@@ -12,7 +12,7 @@ import logging
 import sys
 from pathlib import Path
 
-from src.scraper.arukereso import RobotsDisallowed, fetch_all_stores
+from src.scraper.arukereso import RobotsDisallowed, check_robots, fetch_all_stores
 from src.scraper.browser import FetchError, StealthBrowser
 from src.scraper.config import ScrapeConfig
 from src.scraper.discovery import discover
@@ -142,6 +142,17 @@ async def _run_scrape(args: argparse.Namespace) -> int:
 async def _run_discover(args: argparse.Namespace) -> int:
     config = _config_from_args(args)
     url = args.url or config.stores_url
+
+    # Discovery fetches the live site just as a scrape does, so it owes
+    # robots.txt the same respect. Without this the --ignore-robots flag on
+    # this subcommand would be inert and the crawl would proceed regardless.
+    if config.respect_robots and not check_robots(url):
+        logger.error(
+            "robots.txt disallows %s. Pass --ignore-robots only if you have "
+            "permission to crawl it.",
+            url,
+        )
+        return 2
 
     async with StealthBrowser(config) as browser:
         try:

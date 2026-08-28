@@ -232,6 +232,14 @@ class StealthBrowser:
             await asyncio.sleep(delay)
 
     async def _backoff(self, attempt: int) -> None:
-        """Sleep an exponentially growing, jittered delay before a retry."""
+        """Sleep an exponentially growing, jittered delay before a retry.
+
+        No-ops once ``attempt`` is the last one: the loop is about to exit and
+        raise, so sleeping there delays the error without buying a retry. On a
+        run with ``enrich_details`` that dead wait is paid for every profile
+        that never succeeds.
+        """
+        if attempt >= self.config.max_retries:
+            return
         base = min(2.0**attempt, 30.0)
         await asyncio.sleep(base + random.uniform(0, 1.0))

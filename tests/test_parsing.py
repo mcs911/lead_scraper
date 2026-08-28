@@ -166,3 +166,44 @@ def test_has_next_page_detects_control(listing_html: str) -> None:
 
 def test_has_next_page_false_on_last_page(unknown_markup_html: str) -> None:
     assert has_next_page(unknown_markup_html) is False
+
+
+# -- regressions -----------------------------------------------------------
+
+
+def test_logo_url_is_none_when_card_has_no_image() -> None:
+    """urljoin(base, "") returns the base URL, not "".
+
+    Without an explicit guard every logo-less store was exported with
+    logo_url set to the site root. This hits the heuristic path, which is the
+    one that actually runs while the selectors are unverified.
+    """
+    html = (FIXTURES / "stores_no_logo.html").read_text(encoding="utf-8")
+    stores = {s.store_id: s for s in parse_stores(html)}
+
+    assert set(stores) == {"zeta-muszaki", "omega-halozat"}
+    for store in stores.values():
+        assert store.logo_url is None, f"{store.store_id} got {store.logo_url!r}"
+
+
+def test_store_fields_matches_dataclass() -> None:
+    """STORE_FIELDS drives the CSV header; drift makes DictWriter raise.
+
+    Nothing else pins the export schema to the model, so adding a field to
+    Store without updating STORE_FIELDS would only fail at export time.
+    """
+    import dataclasses
+
+    from src.scraper.models import STORE_FIELDS, Store
+
+    assert tuple(f.name for f in dataclasses.fields(Store)) == STORE_FIELDS
+
+
+def test_config_rejects_zero_max_retries() -> None:
+    """max_retries=0 would skip the fetch loop and fail with 'after 0 attempts'."""
+    import pytest as _pytest
+
+    from src.scraper.config import ScrapeConfig
+
+    with _pytest.raises(ValueError, match="max_retries"):
+        ScrapeConfig(max_retries=0)

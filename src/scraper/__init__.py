@@ -14,8 +14,11 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         fetch_all_stores,
         fetch_all_stores_sync,
         fetch_store_ids,
+        scrape_to_csv,
+        scrape_to_csv_sync,
     )
     from src.scraper.config import ScrapeConfig
+    from src.scraper.export import to_csv, to_json
     from src.scraper.models import Store
 
 __all__ = [
@@ -24,6 +27,10 @@ __all__ = [
     "fetch_all_stores",
     "fetch_all_stores_sync",
     "fetch_store_ids",
+    "scrape_to_csv",
+    "scrape_to_csv_sync",
+    "to_csv",
+    "to_json",
 ]
 
 _LAZY: dict[str, str] = {
@@ -32,6 +39,10 @@ _LAZY: dict[str, str] = {
     "fetch_all_stores": "src.scraper.arukereso",
     "fetch_all_stores_sync": "src.scraper.arukereso",
     "fetch_store_ids": "src.scraper.arukereso",
+    "scrape_to_csv": "src.scraper.arukereso",
+    "scrape_to_csv_sync": "src.scraper.arukereso",
+    "to_csv": "src.scraper.export",
+    "to_json": "src.scraper.export",
 }
 
 
