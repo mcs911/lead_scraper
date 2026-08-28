@@ -222,3 +222,71 @@ def test_discover_checks_robots(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert rc == 2, "a robots.txt disallow must abort discovery"
     assert calls == ["https://example.com/"]
+
+
+@pytest.mark.asyncio
+async def test_scrape_to_csv_writes_file(config: ScrapeConfig, tmp_path: Path) -> None:
+    """The one-call form scrapes and writes a usable CSV."""
+    import csv
+
+    from src.scraper.arukereso import scrape_to_csv
+
+    out = await scrape_to_csv(tmp_path / "leads.csv", config)
+
+    assert out.exists()
+    with out.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert {r["store_id"] for r in rows} == {"alfa-elektronika", "bety-butor"}
+    assert any(r["name"] == "Béty Bútor Zrt." for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_scrape_to_csv_creates_parent_directories(
+    config: ScrapeConfig, tmp_path: Path
+) -> None:
+    from src.scraper.arukereso import scrape_to_csv
+
+    out = await scrape_to_csv(tmp_path / "nested" / "dir" / "leads.csv", config)
+    assert out.exists()
+
+
+@pytest.mark.asyncio
+async def test_scrape_to_csv_writes_header_only_when_nothing_found(
+    server: str, tmp_path: Path
+) -> None:
+    """An empty scrape must still leave a readable CSV, not a missing file.
+
+    Silently writing nothing is the failure mode to avoid while the selectors
+    are unverified, so the header lands and the caller gets a warning.
+    """
+    import csv
+
+    from src.scraper.arukereso import scrape_to_csv
+    from src.scraper.models import STORE_FIELDS
+
+    # /nothing/ is served 404, so no stores are parsed.
+    cfg = ScrapeConfig(
+        base_url=server,
+        stores_path="/nothing/",
+        min_delay=0.0,
+        max_delay=0.0,
+        respect_robots=False,
+        max_pages=1,
+        max_retries=1,
+        timeout_ms=8_000,
+    )
+    out = await scrape_to_csv(tmp_path / "empty.csv", cfg)
+
+    assert out.exists()
+    with out.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.reader(handle)
+        assert tuple(next(reader)) == STORE_FIELDS
+        assert next(reader, None) is None
+
+
+def test_scrape_to_csv_is_exported_from_the_package() -> None:
+    import src.scraper as pkg
+
+    assert callable(pkg.scrape_to_csv)
+    assert callable(pkg.scrape_to_csv_sync)

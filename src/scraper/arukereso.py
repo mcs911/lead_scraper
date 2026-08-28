@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -11,6 +12,7 @@ import requests
 
 from src.scraper.browser import FetchError, StealthBrowser
 from src.scraper.config import ScrapeConfig
+from src.scraper.export import to_csv
 from src.scraper.models import Store
 from src.scraper.parsing import (
     has_next_page,
@@ -134,6 +136,54 @@ def fetch_all_stores_sync(config: ScrapeConfig | None = None) -> list[Store]:
 def fetch_store_ids(config: ScrapeConfig | None = None) -> list[str]:
     """Return just the store IDs from the directory."""
     return [store.store_id for store in fetch_all_stores_sync(config)]
+
+
+async def scrape_to_csv(
+    path: str | Path = "stores.csv",
+    config: ScrapeConfig | None = None,
+) -> Path:
+    """Scrape the store directory and write the results straight to a CSV.
+
+    The one-call form of ``fetch_all_stores`` followed by
+    :func:`~src.scraper.export.to_csv`. Use the two separately when you want
+    the :class:`~src.scraper.models.Store` objects as well as the file.
+
+    A run that finds nothing still writes a header-only CSV rather than
+    raising, so downstream tooling reading the file does not break; the empty
+    result is logged as a warning instead. Deciding that an empty scrape is a
+    failure is policy, and belongs to the caller — the CLI treats it as one.
+
+    Args:
+        path: Destination CSV. Parent directories are created as needed.
+        config: Runtime settings; defaults to a conservative
+            :class:`~src.scraper.config.ScrapeConfig`.
+
+    Returns:
+        The path written.
+
+    Raises:
+        RobotsDisallowed: ``config.respect_robots`` is set and robots.txt
+            disallows the store directory.
+    """
+    stores = await fetch_all_stores(config)
+
+    if not stores:
+        logger.warning(
+            "No stores scraped; writing a header-only CSV to %s. The configured "
+            "selectors may not match the live markup — run "
+            "`python -m src.cli discover` to derive the real ones.",
+            path,
+        )
+
+    return to_csv(stores, path)
+
+
+def scrape_to_csv_sync(
+    path: str | Path = "stores.csv",
+    config: ScrapeConfig | None = None,
+) -> Path:
+    """Blocking wrapper around :func:`scrape_to_csv`."""
+    return asyncio.run(scrape_to_csv(path, config))
 
 
 # -- detail enrichment -----------------------------------------------------

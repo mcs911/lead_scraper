@@ -26,14 +26,36 @@ python -m src.cli scrape --headed --max-pages 1 -v
 From Python:
 
 ```python
-from src.scraper import ScrapeConfig, fetch_all_stores_sync
+from src.scraper import ScrapeConfig, scrape_to_csv_sync
+
+# Scrape and write the CSV in one call
+path = scrape_to_csv_sync("leads.csv", ScrapeConfig(max_pages=3))
+print(f"wrote {path}")
+```
+
+Or keep the `Store` objects and write the file separately:
+
+```python
+from src.scraper import ScrapeConfig, fetch_all_stores_sync, to_csv
 
 stores = fetch_all_stores_sync(ScrapeConfig(max_pages=3))
 for store in stores:
     print(store.store_id, store.name, store.rating, store.review_count)
+to_csv(stores, "leads.csv")
 ```
 
-`fetch_all_stores` is the async form; `fetch_store_ids()` returns just the IDs.
+| Function | Returns |
+|---|---|
+| `scrape_to_csv(path, config)` | Scrapes, writes the CSV, returns its `Path` |
+| `scrape_to_csv_sync(path, config)` | Blocking form of the above |
+| `fetch_all_stores(config)` | `list[Store]`, async |
+| `fetch_all_stores_sync(config)` | `list[Store]`, blocking |
+| `fetch_store_ids(config)` | `list[str]` of store IDs |
+| `to_csv(stores, path)` / `to_json(stores, path)` | Writes an existing list, returns its `Path` |
+
+A run that finds nothing still writes a header-only CSV and logs a warning
+rather than raising, so downstream tooling does not break on a missing file.
+The CLI treats an empty scrape as an error (exit code 1) instead.
 
 ### Output fields
 
