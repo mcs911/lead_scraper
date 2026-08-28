@@ -184,3 +184,26 @@ def test_logo_url_is_none_when_card_has_no_image() -> None:
     assert set(stores) == {"zeta-muszaki", "omega-halozat"}
     for store in stores.values():
         assert store.logo_url is None, f"{store.store_id} got {store.logo_url!r}"
+
+
+def test_store_fields_matches_dataclass() -> None:
+    """STORE_FIELDS drives the CSV header; drift makes DictWriter raise.
+
+    Nothing else pins the export schema to the model, so adding a field to
+    Store without updating STORE_FIELDS would only fail at export time.
+    """
+    import dataclasses
+
+    from src.scraper.models import STORE_FIELDS, Store
+
+    assert tuple(f.name for f in dataclasses.fields(Store)) == STORE_FIELDS
+
+
+def test_config_rejects_zero_max_retries() -> None:
+    """max_retries=0 would skip the fetch loop and fail with 'after 0 attempts'."""
+    import pytest as _pytest
+
+    from src.scraper.config import ScrapeConfig
+
+    with _pytest.raises(ValueError, match="max_retries"):
+        ScrapeConfig(max_retries=0)

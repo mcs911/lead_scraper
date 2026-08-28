@@ -178,3 +178,47 @@ def test_outbound_link_excludes_own_subdomains() -> None:
         _find_outbound_link(tree, "https://www.arukereso.hu")
         == "https://alfa-elektronika.hu"
     )
+
+
+@pytest.mark.asyncio
+async def test_backoff_skips_the_final_attempt(config: ScrapeConfig) -> None:
+    """Backing off after the last attempt only delays the error.
+
+    The loop exits straight into FetchError, so that sleep buys no retry. It
+    measured at ~4-5s of dead wait per permanently-failing URL. Asserted by
+    timing the real coroutine rather than inspecting it.
+    """
+    import time
+
+    config.max_retries = 3
+    browser = StealthBrowser(config)
+
+    # A non-final attempt must actually sleep (2**1 = 2s floor).
+    start = time.monotonic()
+    await browser._backoff(1)
+    assert time.monotonic() - start > 1.0
+
+    # The final attempt must return effectively instantly.
+    start = time.monotonic()
+    await browser._backoff(3)
+    assert time.monotonic() - start < 0.1
+
+
+def test_discover_checks_robots(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Discovery hits the live site, so it owes robots.txt the same respect.
+
+    It previously fetched unconditionally, which also made --ignore-robots
+    inert on that subcommand.
+    """
+    import asyncio
+
+    from src import cli
+
+    calls: list[str] = []
+    monkeypatch.setattr(cli, "check_robots", lambda url: calls.append(url) or False)
+
+    args = cli._build_parser().parse_args(["discover", "--url", "https://example.com/"])
+    rc = asyncio.run(cli._run_discover(args))
+
+    assert rc == 2, "a robots.txt disallow must abort discovery"
+    assert calls == ["https://example.com/"]
