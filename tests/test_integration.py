@@ -158,3 +158,23 @@ async def test_export_round_trip(config: ScrapeConfig, tmp_path: Path) -> None:
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert {r["store_id"] for r in payload} == {s.store_id for s in stores}
     assert any(r["name"] == "Béty Bútor Zrt." for r in payload)
+
+
+def test_outbound_link_excludes_own_subdomains() -> None:
+    """A CDN host under the site's own domain is not the merchant's website.
+
+    Matching on the netloc alone ("www.arukereso.hu") let "static.arukereso.hu"
+    through as an outbound link.
+    """
+    from selectolax.parser import HTMLParser
+
+    from src.scraper.arukereso import _find_outbound_link
+
+    tree = HTMLParser("""<a href="https://static.arukereso.hu/a.png">asset</a>
+           <a href="https://kepek.arukereso.hu/b.png">asset</a>
+           <a href="https://arukereso.hu/x">self</a>
+           <a href="https://alfa-elektronika.hu">shop</a>""")
+    assert (
+        _find_outbound_link(tree, "https://www.arukereso.hu")
+        == "https://alfa-elektronika.hu"
+    )

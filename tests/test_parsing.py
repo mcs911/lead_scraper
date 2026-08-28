@@ -166,3 +166,21 @@ def test_has_next_page_detects_control(listing_html: str) -> None:
 
 def test_has_next_page_false_on_last_page(unknown_markup_html: str) -> None:
     assert has_next_page(unknown_markup_html) is False
+
+
+# -- regressions -----------------------------------------------------------
+
+
+def test_logo_url_is_none_when_card_has_no_image() -> None:
+    """urljoin(base, "") returns the base URL, not "".
+
+    Without an explicit guard every logo-less store was exported with
+    logo_url set to the site root. This hits the heuristic path, which is the
+    one that actually runs while the selectors are unverified.
+    """
+    html = (FIXTURES / "stores_no_logo.html").read_text(encoding="utf-8")
+    stores = {s.store_id: s for s in parse_stores(html)}
+
+    assert set(stores) == {"zeta-muszaki", "omega-halozat"}
+    for store in stores.values():
+        assert store.logo_url is None, f"{store.store_id} got {store.logo_url!r}"

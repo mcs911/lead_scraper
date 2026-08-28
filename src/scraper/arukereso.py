@@ -187,13 +187,22 @@ async def _enrich_one(browser: StealthBrowser, store: Store) -> None:
 
 
 def _find_outbound_link(tree: object, base_url: str) -> str | None:
-    """Return the first link pointing off arukereso.hu — the merchant's site."""
+    """Return the first link pointing off arukereso.hu — the merchant's site.
+
+    Excludes the site's own domain *and* its subdomains. Comparing against the
+    netloc alone is not enough: that is ``www.arukereso.hu``, which does not
+    match a CDN host like ``static.arukereso.hu``, so image and asset links
+    would be recorded as the merchant's website.
+    """
     own_host = urlparse(base_url).netloc
+    root = own_host[4:] if own_host.startswith("www.") else own_host
+
     for anchor in tree.css("a[href]"):  # type: ignore[attr-defined]
         href = anchor.attributes.get("href")
         if not href or not href.startswith("http"):
             continue
         host = urlparse(href).netloc
-        if host and host != own_host and not host.endswith(own_host):
-            return href
+        if not host or host == root or host.endswith(f".{root}"):
+            continue
+        return href
     return None

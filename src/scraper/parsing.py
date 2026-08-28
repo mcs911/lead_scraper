@@ -245,6 +245,11 @@ def _heuristic_stores(tree: HTMLParser, base_url: str) -> list[Store]:
                 break
             card = card.parent
 
+        # Guard on the src before joining: urljoin(base, "") returns the base
+        # URL rather than an empty string, which would record every logo-less
+        # store as having the site root for a logo.
+        logo_src = _attr(anchor.css_first("img[src]"), "src")
+
         stores[store_id] = Store(
             store_id=store_id,
             name=name,
@@ -252,10 +257,7 @@ def _heuristic_stores(tree: HTMLParser, base_url: str) -> list[Store]:
             rating=parse_float_hu(select_text(card, "rating")),
             review_count=parse_int_hu(select_text(card, "review_count")),
             offer_count=parse_int_hu(select_text(card, "offer_count")),
-            logo_url=(
-                urljoin(base_url, _attr(anchor.css_first("img[src]"), "src") or "")
-                or None
-            ),
+            logo_url=urljoin(base_url, logo_src) if logo_src else None,
             city=select_text(card, "city"),
         )
 
