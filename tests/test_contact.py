@@ -175,3 +175,68 @@ def test_store_model_has_no_email_field() -> None:
 )
 def test_contains_email(value: str | None, expected: bool) -> None:
     assert contains_email(value) is expected
+
+
+# -- regressions -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<p>Telefon: 06301234567 </p>",
+        '<a href="tel:06301234567">06301234567</a>',
+        "<p>Hívjon: 36301234567.</p>",
+    ],
+)
+def test_phone_is_not_harvested_as_a_tax_number(html: str) -> None:
+    """An unseparated adószám and a Hungarian phone are both 11 digits.
+
+    The unlabelled whole-page fallback therefore demands the punctuated form;
+    without that, a tel: link was read as the tax number 06301234-5-67.
+    """
+    assert extract_tax_number(HTMLParser(html)) is None
+
+
+def test_unlabelled_tax_number_still_found_when_punctuated() -> None:
+    assert extract_tax_number(HTMLParser("<p>12345678-1-42</p>")) == "12345678-1-42"
+
+
+def test_labelled_tax_number_still_accepts_the_run_together_form() -> None:
+    """A label disambiguates the digits, so the unseparated form stays valid."""
+    tree = HTMLParser("<dl><dt>Adószám</dt><dd>12345678142</dd></dl>")
+    assert extract_tax_number(tree) == "12345678-1-42"
+
+
+def test_settlement_row_does_not_shadow_the_phone_row() -> None:
+    """ "Település" starts with the "tel" label.
+
+    A bare startswith matched it first, answered the phone lookup with
+    "Budapest", and the caller discarded that as unparseable — losing the
+    phone entirely on any page listing a settlement.
+    """
+    tree = HTMLParser(
+        "<dl><dt>Település</dt><dd>Budapest</dd>"
+        "<dt>Telefon</dt><dd>+36 1 234 5678</dd></dl>"
+    )
+    assert extract_phone(tree) == "+3612345678"
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<p>Telefon: 06 1 234 5678</p>",
+        "<p>Tel.: 06 1 234 5678</p>",
+        "<p>Tel: 06 1 234 5678</p>",
+        "<dl><dt>Telefonszám</dt><dd>06 1 234 5678</dd></dl>",
+    ],
+)
+def test_genuine_phone_labels_still_match(html: str) -> None:
+    """The boundary rule must not cost the labels that should match."""
+    assert extract_phone(HTMLParser(html)) == "+3612345678"
+
+
+def test_settlement_label_is_not_confused_for_a_phone_label() -> None:
+    from src.scraper.contact import PHONE_LABELS, find_labelled_value
+
+    tree = HTMLParser("<dl><dt>Település</dt><dd>Budapest</dd></dl>")
+    assert find_labelled_value(tree, PHONE_LABELS) is None

@@ -49,6 +49,11 @@ def contains_email(value: object) -> bool:
 #: Written as 12345678-1-42, occasionally unseparated.
 _ADOSZAM = re.compile(r"\b(\d{8})[-\s]?(\d)[-\s]?(\d{2})\b")
 
+#: The same number but requiring the separators. An adószám and an unseparated
+#: Hungarian phone number are both 11 digits, so only the punctuated form is
+#: safe to trust from unlabelled free text.
+_ADOSZAM_SEPARATED = re.compile(r"\b(\d{8})[-\s](\d)[-\s](\d{2})\b")
+
 #: EU VAT form, which carries only the 8-digit core (HU12345678).
 _EU_VAT = re.compile(r"\bHU\s?(\d{8})\b", re.IGNORECASE)
 
@@ -146,22 +151,36 @@ def normalise_phone(raw: str | None) -> str | None:
     return f"+36{national}"
 
 
-def normalise_tax_number(raw: str | None) -> str | None:
+def normalise_tax_number(
+    raw: str | None, *, require_separators: bool = False
+) -> str | None:
     """Normalise an adószám to canonical ``12345678-1-42`` form.
 
     Also accepts the EU VAT form (``HU12345678``), which carries only the
     8-digit core; that is returned as-is since the VAT and county digits are
     genuinely absent rather than guessable.
 
+    Args:
+        raw: Text to read the number out of.
+        require_separators: Only accept the punctuated ``12345678-1-42`` form.
+            Set this when scanning unlabelled text: an adószám and an
+            unseparated Hungarian phone number are both 11 digits, so
+            ``06301234567`` would otherwise be read as ``06301234-5-67``. A
+            label makes the number unambiguous, so labelled lookups leave this
+            off and still accept the run-together form.
+
     >>> normalise_tax_number("Adószám: 12345678-1-42")
     '12345678-1-42'
     >>> normalise_tax_number("HU12345678")
     '12345678'
+    >>> normalise_tax_number("06301234567", require_separators=True) is None
+    True
     """
     if not raw:
         return None
 
-    match = _ADOSZAM.search(raw)
+    pattern = _ADOSZAM_SEPARATED if require_separators else _ADOSZAM
+    match = pattern.search(raw)
     if match:
         return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
 
@@ -184,9 +203,27 @@ def _next_element(node: Node) -> Node | None:
     return None
 
 
+def _label_prefix_len(text: str, label: str) -> int | None:
+    """Length of ``label`` where it prefixes ``text`` as a whole word, else None.
+
+    A bare ``startswith`` is wrong here: "Település" starts with the "tel"
+    label, so a settlement row would be answered as the phone row and shadow
+    the real one — the first match wins, and the caller then discards
+    "Budapest" as an unparseable number, losing the phone entirely. Requiring
+    the next character to be non-alphabetic keeps "Telefon", "Telefon:" and
+    "Tel." matching while rejecting "Település".
+    """
+    if not text.startswith(label):
+        return None
+    rest = text[len(label) :]
+    if rest and rest[0].isalpha():
+        return None
+    return len(label)
+
+
 def _matches_label(text: str, labels: Iterable[str]) -> bool:
     lowered = text.strip().lower().rstrip(":").strip()
-    return any(lowered == lab or lowered.startswith(lab) for lab in labels)
+    return any(_label_prefix_len(lowered, lab) is not None for lab in labels)
 
 
 def find_labelled_value(tree: HTMLParser, labels: Iterable[str]) -> str | None:
@@ -215,9 +252,9 @@ def find_labelled_value(tree: HTMLParser, labels: Iterable[str]) -> str | None:
         if not text or len(text) > 200:
             continue
         for label in labels:
-            prefix = text.lower()
-            if prefix.startswith(label):
-                remainder = text[len(label) :].lstrip(" : \t")
+            width = _label_prefix_len(text.lower(), label)
+            if width is not None:
+                remainder = text[width:].lstrip(" : \t")
                 if remainder and not contains_email(remainder):
                     return remainder
     return None
@@ -229,9 +266,11 @@ def find_labelled_value(tree: HTMLParser, labels: Iterable[str]) -> str | None:
 def extract_tax_number(tree: HTMLParser) -> str | None:
     """Return the store's adószám, or ``None`` when the page has none.
 
-    Tries the labelled value first, then falls back to scanning the whole page
-    for the number's distinctive shape — the format is specific enough that a
-    bare match is safe, and it works on markup with no usable labels at all.
+    Tries the labelled value first, where the label disambiguates the number
+    and the run-together form is safe to accept. The whole-page fallback then
+    demands the punctuated form, because an unseparated adószám is
+    indistinguishable from a Hungarian phone number — both are 11 digits, and
+    a ``tel:`` link would otherwise be harvested as a tax number.
     """
     labelled = find_labelled_value(tree, TAX_LABELS)
     if labelled:
@@ -239,7 +278,7 @@ def extract_tax_number(tree: HTMLParser) -> str | None:
         if normalised:
             return normalised
 
-    return normalise_tax_number(tree.text())
+    return normalise_tax_number(tree.text(), require_separators=True)
 
 
 def extract_phone(tree: HTMLParser) -> str | None:
